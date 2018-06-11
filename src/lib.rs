@@ -28,22 +28,26 @@
 #![allow(unused_doc_comment)]
 
 extern crate base64;
+#[macro_use]
 extern crate failure;
-#[macro_use] 
+#[macro_use]
 extern crate failure_derive;
+#[macro_use]
+extern crate lazy_static;
 #[macro_use]
 extern crate log;
 extern crate rand;
 extern crate reqwest;
+extern crate ring;
 extern crate time;
 extern crate url;
-extern crate ring;
 
-use ring::{hmac, digest};
 use rand::Rng;
 use rand::distributions::Alphanumeric;
 use reqwest::{Client, RequestBuilder, StatusCode};
-use reqwest::header::{Authorization, ContentType, Headers};
+use reqwest::header::{Authorization, ContentType};
+use reqwest::mime;
+use ring::{digest, hmac};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io::Read;
@@ -56,6 +60,10 @@ pub type Result<T> = std::result::Result<T, failure::Error>;
 #[derive(Debug, Fail, Clone, Copy)]
 #[fail(display = "HTTP status error code {}", _0)]
 pub struct HttpStatusError(pub u16);
+
+lazy_static! {
+    static ref CLIENT: Client = Client::new();
+}
 
 /// Token structure for the OAuth
 #[derive(Clone, Debug)]
@@ -134,11 +142,6 @@ fn encode(s: &str) -> String {
     percent_encoding::percent_encode(s.as_bytes(), StrictEncodeSet).collect()
 }
 
-fn hmac_sha1(key: &[u8], data: &[u8]) -> hmac::Signature {
-    let signing_key = hmac::SigningKey::new(&digest::SHA1, key);
-    hmac::sign(&signing_key, data)
-}
-
 /// Create signature. See https://dev.twitter.com/oauth/overview/creating-signatures
 fn signature(
     method: &str,
@@ -155,8 +158,9 @@ fn signature(
     );
     debug!("Signature base string: {}", base);
     debug!("Authorization header: Authorization: {}", base);
-    let sha1 = hmac_sha1(key.as_bytes(), base.as_bytes());
-    base64::encode(&sha1)
+    let signing_key = hmac::SigningKey::new(&digest::SHA1, key.as_bytes());
+    let signature = hmac::sign(&signing_key, base.as_bytes());
+    base64::encode(signature.as_ref())
 }
 
 /// Constuct plain-text header
@@ -270,13 +274,7 @@ pub fn get(
         format!("{}", uri)
     };
 
-    let mut headers = Headers::new();
-    let _ = headers.set(Authorization(header));
-
-    let client = Client::new();
-    let mut get = client.get(&req_uri);
-    let req = get.body(body).headers(headers);
-    let rsp = send(req)?;
+    let rsp = send(CLIENT.get(&req_uri).header(Authorization(header)))?;
     Ok(rsp)
 }
 
@@ -300,15 +298,13 @@ pub fn post(
 ) -> Result<Vec<u8>> {
     let (header, body) = get_header("POST", uri, consumer, token, other_param);
 
-    let mut headers = Headers::new();
-    headers.set(Authorization(header));
-    headers.set(ContentType(
-        "application/www-form-url-encoded".parse().unwrap(),
-    ));
-    let client = Client::new();
-    let mut post = client.post(uri);
-    let req = post.body(body).headers(headers);
-    let rsp = send(req)?;
+    let rsp = send(
+        CLIENT
+            .post(uri)
+            .body(body)
+            .header(Authorization(header))
+            .header(ContentType(mime::APPLICATION_WWW_FORM_URLENCODED)),
+    )?;
     Ok(rsp)
 }
 
@@ -316,7 +312,7 @@ pub fn post(
 fn send(builder: &mut RequestBuilder) -> Result<Vec<u8>> {
     let mut response = builder.send()?;
     if response.status() != StatusCode::Ok {
-        return Err(HttpStatusError(response.status().into()).into());
+        bail!(HttpStatusError(response.status().into()));
     }
     let mut buf = vec![];
     let _ = response.read_to_end(&mut buf)?;
