@@ -41,6 +41,7 @@ extern crate ring;
 
 use ring::{hmac, digest};
 use rand::Rng;
+use rand::distributions::Alphanumeric;
 use reqwest::{Client, RequestBuilder, StatusCode};
 use reqwest::header::{Authorization, ContentType, Headers};
 use std::borrow::Cow;
@@ -191,7 +192,7 @@ fn get_header(
     let mut param = HashMap::new();
     let timestamp = format!("{}", time::now_utc().to_timespec().sec);
     let nonce = rand::thread_rng()
-        .gen_ascii_chars()
+        .sample_iter(&Alphanumeric)
         .take(32)
         .collect::<String>();
 
