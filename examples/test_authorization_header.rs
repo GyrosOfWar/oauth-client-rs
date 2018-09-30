@@ -16,16 +16,15 @@ use oauth::Token;
 use rand::Rng;
 use rand::distributions::Alphanumeric;
 use reqwest::Client;
-use reqwest::header::{Authorization, Headers};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io::Read;
 use std::str;
 
 mod api {
-    pub const REQUEST_TOKEN: &'static str = "http://oauthbin.com/v1/request-token";
-    pub const ACCESS_TOKEN: &'static str = "http://oauthbin.com/v1/access-token";
-    pub const ECHO: &'static str = "http://oauthbin.com/v1/echo";
+    pub const REQUEST_TOKEN: &str = "http://oauthbin.com/v1/request-token";
+    pub const ACCESS_TOKEN: &str = "http://oauthbin.com/v1/access-token";
+    pub const ECHO: &str = "http://oauthbin.com/v1/echo";
 }
 
 fn split_query<'a>(query: &'a str) -> HashMap<Cow<'a, str>, Cow<'a, str>> {
@@ -43,11 +42,9 @@ fn get_request_token(consumer: &Token) -> Token<'static> {
     let (header, _body) =
         oauth::authorization_header("GET", api::REQUEST_TOKEN, consumer, None, None);
     let handle = Client::new();
-    let mut headers = Headers::new();
-    headers.set(Authorization(header));
     let mut response = handle
         .get(api::REQUEST_TOKEN)
-        .headers(headers)
+        .header("Authorization", header)
         .send()
         .unwrap();
     let mut resp = String::new();
@@ -55,8 +52,8 @@ fn get_request_token(consumer: &Token) -> Token<'static> {
     println!("get_request_token response: {:?}", resp);
     let param = split_query(resp.as_ref());
     Token::new(
-        param.get("oauth_token").unwrap().to_string(),
-        param.get("oauth_token_secret").unwrap().to_string(),
+        param["oauth_token"].to_string(),
+        param["oauth_token_secret"].to_string(),
     )
 }
 
@@ -64,11 +61,9 @@ fn get_access_token(consumer: &Token, request: &Token) -> Token<'static> {
     let (header, _body) =
         oauth::authorization_header("GET", api::ACCESS_TOKEN, consumer, Some(request), None);
     let handle = Client::new();
-    let mut headers = Headers::new();
-    headers.set(Authorization(header));
     let mut response = handle
         .get(api::ACCESS_TOKEN)
-        .headers(headers)
+        .header("Authorization", header)
         .send()
         .unwrap();
     let mut resp = String::new();
@@ -76,8 +71,8 @@ fn get_access_token(consumer: &Token, request: &Token) -> Token<'static> {
     println!("get_access_token response: {:?}", resp);
     let param = split_query(resp.as_ref());
     Token::new(
-        param.get("oauth_token").unwrap().to_string(),
-        param.get("oauth_token_secret").unwrap().to_string(),
+        param["oauth_token"].to_string(),
+        param["oauth_token_secret"].to_string(),
     )
 }
 
@@ -94,12 +89,9 @@ fn echo(consumer: &Token, access: &Token) {
     let (header, body) =
         oauth::authorization_header("POST", api::ECHO, consumer, Some(access), Some(&req_param));
 
-    let mut headers = Headers::new();
-    headers.set(Authorization(header));
-
     let mut response = Client::new()
         .post(api::ECHO)
-        .headers(headers)
+        .header("Authorization", header)
         .body(body.clone())
         .send()
         .unwrap();

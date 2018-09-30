@@ -25,7 +25,7 @@
 #![warn(unused_import_braces)]
 #![warn(unused_qualifications)]
 #![warn(unused_results)]
-#![allow(unused_doc_comment)]
+#![allow(unused_doc_comments)]
 
 extern crate base64;
 #[macro_use]
@@ -41,12 +41,12 @@ extern crate reqwest;
 extern crate ring;
 extern crate time;
 extern crate url;
+extern crate mime;
 
 use rand::Rng;
 use rand::distributions::Alphanumeric;
 use reqwest::{Client, RequestBuilder, StatusCode};
-use reqwest::header::{Authorization, ContentType};
-use reqwest::mime;
+// use reqwest::header::{Authorization, ContentType};
 use ring::{digest, hmac};
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -182,7 +182,7 @@ fn body(param: &ParamList) -> String {
         .map(|(k, v)| format!("{}={}", k, encode(&v)))
         .collect::<Vec<_>>();
     pairs.sort();
-    format!("{}", pairs.join("&"))
+    pairs.join("&")
 }
 
 /// Create header and body
@@ -268,13 +268,14 @@ pub fn get(
     other_param: Option<&ParamList>,
 ) -> Result<Vec<u8>> {
     let (header, body) = get_header("GET", uri, consumer, token, other_param);
-    let req_uri = if body.len() > 0 {
+    let req_uri = if !body.is_empty() {
         format!("{}?{}", uri, body)
     } else {
-        format!("{}", uri)
+        uri.into()
     };
 
-    let rsp = send(CLIENT.get(&req_uri).header(Authorization(header)))?;
+    let request = CLIENT.get(&req_uri).header("Authorization", header);
+    let rsp = send(request)?;
     Ok(rsp)
 }
 
@@ -298,20 +299,19 @@ pub fn post(
 ) -> Result<Vec<u8>> {
     let (header, body) = get_header("POST", uri, consumer, token, other_param);
 
-    let rsp = send(
-        CLIENT
+    let request = CLIENT
             .post(uri)
             .body(body)
-            .header(Authorization(header))
-            .header(ContentType(mime::APPLICATION_WWW_FORM_URLENCODED)),
-    )?;
+            .header("Authorization", header)
+            .header("Content-Type", mime::APPLICATION_WWW_FORM_URLENCODED.to_string());
+    let rsp = send(request)?;
     Ok(rsp)
 }
 
 /// Send request to the server
-fn send(builder: &mut RequestBuilder) -> Result<Vec<u8>> {
+fn send(builder: RequestBuilder) -> Result<Vec<u8>> {
     let mut response = builder.send()?;
-    if response.status() != StatusCode::Ok {
+    if response.status() != StatusCode::OK {
         bail!(HttpStatusError(response.status().into()));
     }
     let mut buf = vec![];
